@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from db_manager import init_db, validate_token
 from data_engine import generate_student_dataset
 from code_generator import generate_ml_script_with_ai
-from mailer import zip_and_email
+# from mailer import zip_and_email  # Disabled for local MVP
 import subprocess
 import shutil
 import os
@@ -30,8 +30,9 @@ class GenerateRequest(BaseModel):
 
 @app.post("/generate")
 async def generate(request: GenerateRequest):
-    if not validate_token(request.token):
-        raise HTTPException(status_code=401, detail="Invalid or already used token")
+    # Token validation disabled for testing
+    # if not validate_token(request.token):
+    #     raise HTTPException(status_code=401, detail="Invalid or already used token")
     
     folder_path, target_var, feature_list = generate_student_dataset(request.matric_no)
     
@@ -54,7 +55,13 @@ async def generate(request: GenerateRequest):
     if not openai_api_key:
         raise HTTPException(status_code=500, detail="OpenAI API key not configured")
     
-    await generate_ml_script_with_ai(folder_path, target_var, feature_list, theme, openai_api_key)
+    try:
+        await generate_ml_script_with_ai(folder_path, target_var, feature_list, theme, openai_api_key)
+    except Exception as e:
+        print(f"OPENAI TIMEOUT ERROR: {str(e)}")
+        if os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
+        raise HTTPException(status_code=500, detail=f"OpenAI API call failed: {str(e)}")
     
     try:
         result = subprocess.run(
@@ -66,7 +73,8 @@ async def generate(request: GenerateRequest):
         )
         
         if result.returncode != 0:
-            shutil.rmtree(folder_path)
+            if os.path.exists(folder_path):
+                shutil.rmtree(folder_path)
             raise HTTPException(status_code=500, detail=f"Script execution failed: {result.stderr}")
         
         # Generate defense guide
@@ -90,14 +98,22 @@ Key Points for Defense:
         with open(os.path.join(folder_path, "defense_guide.txt"), "w") as f:
             f.write(defense_text)
         
-        # Zip and email
-        zip_and_email(folder_path, request.email)
+        # Zip and save to Downloads folder
+        downloads_path = os.path.join(os.path.expanduser('~'), 'Downloads')
+        zip_name = f"COS201_Assignment_{request.matric_no}"
+        zip_path = shutil.make_archive(os.path.join(downloads_path, zip_name), 'zip', folder_path)
         
-        return {"status": "success", "message": "Analysis complete and emailed"}
+        # Cleanup temp folder
+        shutil.rmtree(folder_path)
+        
+        print(f"✅ Assignment saved to: {zip_path}")
+        return {"status": "success", "message": "Saved directly to Downloads folder!"}
         
     except subprocess.TimeoutExpired:
-        shutil.rmtree(folder_path)
+        if os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
         raise HTTPException(status_code=500, detail="Script execution timed out")
     except Exception as e:
-        shutil.rmtree(folder_path)
+        if os.path.exists(folder_path):
+            shutil.rmtree(folder_path)
         raise HTTPException(status_code=500, detail=f"Execution error: {str(e)}")

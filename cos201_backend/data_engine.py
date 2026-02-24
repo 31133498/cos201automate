@@ -82,9 +82,9 @@ def generate_student_dataset(matric_no: str) -> tuple[str, str, list]:
     theme = themes[np.random.randint(0, len(themes))]
     data = theme["generators"]()
     
-    target_values = theme["intercept"]
+    target_values = float(theme["intercept"])
     for i, feature in enumerate(theme["features"]):
-        target_values += theme["coefficients"][i] * data[feature]
+        target_values += theme["coefficients"][i] * np.array(data[feature], dtype=float)
     
     noise = np.random.normal(0, np.std(target_values) * 0.15, 550)
     data[theme["target"]] = target_values + noise

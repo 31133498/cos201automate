@@ -25,13 +25,7 @@ function App() {
           setTerminalText(terminalSequence[step]);
         } else {
           clearInterval(interval);
-          fetch('https://api.yourdomain.com/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(formData)
-          }).catch(() => {}).finally(() => {
-            setState('success');
-          });
+          setState('success');
         }
       }, 3000);
 
@@ -39,9 +33,27 @@ function App() {
     }
   }, [state]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setState('loading');
+    
+    // Start API call immediately
+    try {
+      const response = await fetch('http://localhost:8000/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        alert(`Error: ${error.detail || 'Request failed'}`);
+        setState('form');
+      }
+    } catch (error) {
+      alert(`Error: ${error.message}`);
+      setState('form');
+    }
   };
 
   const handleReset = () => {
