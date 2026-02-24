@@ -1,32 +1,10 @@
 # ============================================================
 # pipeline/worker.py
 #
-# Background worker thread — polls for pending jobs and
-# processes them one at a time.
-#
-# FIXED BUGS from original:
-#
-# BUG 1 — stop_event killed the thread immediately.
-#   Original code called stop_event.set() then thread.join()
-#   right after starting the thread, which stopped it before
-#   it did any work. Removed entirely — daemon=True means
-#   the thread dies cleanly when the main process exits.
-#
-# BUG 2 — run_pipeline() signature mismatch.
-#   Worker called run_pipeline(token=job.token) but the
-#   function requires matric_no, student_name, student_email
-#   too. Fixed to pass all fields stored on the Job row.
-#
-# BUG 3 — app context on every iteration.
-#   The original wrapped the entire while loop in one
-#   with app.app_context() block. On Render/production this
-#   can cause stale sessions. Fixed: push a fresh app context
-#   for each individual job iteration using a helper.
-#
-# BUG 4 — no sleep on idle.
-#   Without sleep the loop would hammer the database
-#   thousands of times per second when no jobs are pending.
-#   sleep(2) is already present — kept.
+# Background worker — picks up pending jobs and runs them.
+# Passes a progress_cb to run_pipeline so current_step in
+# the database is updated in real time as each stage runs.
+# The frontend polls /status/:id and gets the real step.
 # ============================================================
 
 import threading
@@ -36,77 +14,81 @@ from datetime import datetime
 
 
 def start_worker(app):
-    """
-    Start the background worker as a daemon thread.
-    Call this once inside create_app().
-    """
-
     def worker_loop():
         while True:
             _process_next_job(app)
-            time.sleep(2)   # poll every 2 seconds
+            time.sleep(2)
 
     thread = threading.Thread(target=worker_loop, daemon=True, name="job-worker")
     thread.start()
-    print("✅ Background worker started.")
+    print("✅ Background worker started.", flush=True)
 
 
 def _process_next_job(app):
-    """
-    Pick up one pending job and run it.
-    Uses a fresh app context per job to keep DB sessions clean.
-    """
-    # Import here to avoid circular imports at module load time
     from pipeline.job_manager import Job
     from pipeline.token_manager import db
     from pipeline import run_pipeline
 
     with app.app_context():
         try:
-            # Fetch oldest pending job
             job = Job.query.filter_by(status="pending").order_by(Job.created_at).first()
-
             if not job:
-                return  # nothing to do
+                return
 
-            # Mark as processing immediately so no other worker picks it up
-            job.status = "processing"
+            job.status       = "processing"
+            job.current_step = -1
             db.session.commit()
 
-            print(f"\n▶ Worker picked up job {job.id} — {job.student_name} ({job.matric_no})")
+            print(f"\n▶ Worker picked up job {job.id} — {job.student_name} ({job.matric_no})", flush=True)
 
-            # Run the full pipeline
+            # Capture job.id now for use inside the closure
+            job_id = job.id
+
+            def progress_cb(step_index: int):
+                """Called by run_pipeline before each major step."""
+                with app.app_context():
+                    j = db.session.get(Job, job_id)
+                    if j:
+                        j.current_step = step_index
+                        db.session.commit()
+                        print(f"  → Step {step_index} started", flush=True)
+
             result = run_pipeline(
                 token         = job.token,
                 matric_no     = job.matric_no,
                 student_name  = job.student_name,
                 student_email = job.student_email,
+                progress_cb   = progress_cb,
             )
 
-            # Update job with result
-            if result["success"]:
-                job.status  = "completed"
-                job.zip_url = result.get("zip_url")
-                job.message = result.get("message")
-                print(f"✅ Job {job.id} completed.")
-            else:
-                job.status  = "failed"
-                job.message = result.get("message", "Unknown error")
-                print(f"❌ Job {job.id} failed: {job.message}")
-
-            job.completed_at = datetime.utcnow()
-            db.session.commit()
+            # Write final result
+            with app.app_context():
+                j = db.session.get(Job, job_id)
+                if j:
+                    if result["success"]:
+                        j.status       = "completed"
+                        j.current_step = 6   # all done
+                        j.zip_url      = result.get("zip_url")
+                        j.message      = result.get("message")
+                        print(f"✅ Job {job_id} completed.", flush=True)
+                    else:
+                        j.status  = "failed"
+                        j.message = result.get("message", "Unknown error")
+                        print(f"❌ Job {job_id} failed: {j.message}", flush=True)
+                    j.completed_at = datetime.utcnow()
+                    db.session.commit()
 
         except Exception as e:
-            # Catch everything so the worker thread never dies
-            print(f"❌ Worker exception: {e}")
+            print(f"❌ Worker exception: {e}", flush=True)
             traceback.print_exc()
             try:
-                # Try to mark the job as failed if we have a reference to it
-                if 'job' in dir() and job:
-                    job.status  = "failed"
-                    job.message = str(e)
-                    job.completed_at = datetime.utcnow()
-                    db.session.commit()
+                if 'job_id' in dir() and job_id:
+                    with app.app_context():
+                        j = db.session.get(Job, job_id)
+                        if j:
+                            j.status       = "failed"
+                            j.message      = str(e)
+                            j.completed_at = datetime.utcnow()
+                            db.session.commit()
             except Exception:
-                db.session.rollback()
+                pass

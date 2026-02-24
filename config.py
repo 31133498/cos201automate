@@ -55,3 +55,11 @@ missing = [k for k, v in REQUIRED.items() if not v]
 if missing:
     print(f"⚠️  WARNING: Missing environment variables: {', '.join(missing)}")
     print("   Fill in your .env file before running the system.")
+
+# --- OpenAI ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# --- Modal ---
+# Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in your environment.
+# Modal reads these automatically — no extra config needed here.
+# Sign up at modal.com → Settings → API Tokens to get them.

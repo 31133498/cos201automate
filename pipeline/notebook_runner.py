@@ -1,149 +1,115 @@
 # ============================================================
-# pipeline/notebook_runner.py
+# pipeline/notebook_runner.py  (Modal version)
 #
-# Executes the student's notebook using nbconvert.
-# After execution, the notebook file contains rendered cell
-# outputs — plots are embedded as base64 PNG data inside
-# the notebook JSON itself.
+# Replaces the old local nbconvert call.
+# Sends the notebook + CSV to Modal for remote execution,
+# receives the executed notebook + PNG bytes back,
+# writes them to the student's temp folder,
+# and parses metrics from stdout.
 #
-# We then:
-#   1. Re-open the executed notebook
-#   2. Find image output cells and save them as standalone PNGs
-#   3. Parse the FINAL METRICS block from stdout output cells
+# Your Render process never loads numpy/sklearn/matplotlib.
+# All heavy computation happens inside Modal's container.
 # ============================================================
 
-import subprocess
-import sys
 import os
 import re
-import json
-import base64
+import modal
+from pipeline.modal_runner import app, execute_notebook_remote
 
 
-def run_notebook(notebook_path: str, save_dir: str) -> dict:
+def run_notebook(notebook_path: str, save_dir: str, csv_path: str) -> dict:
     """
-    Execute the notebook in-place using nbconvert --execute.
-    This runs every code cell and writes the output (including
-    rendered plots) back into the .ipynb file.
+    Execute a notebook remotely on Modal and write outputs locally.
 
     Parameters
     ----------
-    notebook_path : str — path to the unexecuted .ipynb file
-    save_dir      : str — working directory (must contain the CSV)
+    notebook_path : str — path to the unexecuted .ipynb on Render
+    save_dir      : str — student's temp folder (for writing outputs)
+    csv_path      : str — path to the student's CSV file
 
     Returns
     -------
     dict of parsed metrics, or None on failure
     """
-    print("→ Executing notebook...")
+    print("→ Sending notebook to Modal for remote execution...")
 
+    # Read files as bytes to send over the wire
+    with open(notebook_path, "rb") as f:
+        notebook_json = f.read()
+
+    csv_filename = os.path.basename(csv_path)
+    with open(csv_path, "rb") as f:
+        csv_bytes = f.read()
+
+    # Call the Modal remote function
+    # .remote() sends it to Modal's cloud — this call blocks until done
     try:
-        result = subprocess.run(
-            [
-                sys.executable, "-m", "jupyter", "nbconvert",
-                "--to", "notebook",
-                "--execute",
-                "--inplace",                           # overwrite the same file
-                "--ExecutePreprocessor.timeout=60",    # 60s max per cell
-                "--ExecutePreprocessor.kernel_name=python3",
-                notebook_path
-            ],
-            cwd=save_dir,
-            capture_output=True,
-            text=True,
-            timeout=120    # total pipeline timeout
-        )
-    except subprocess.TimeoutExpired:
-        print("❌ Notebook execution timed out.")
+        with app.run():
+            result = execute_notebook_remote.remote(
+                notebook_json = notebook_json,
+                csv_bytes     = csv_bytes,
+                csv_filename  = csv_filename,
+            )
+    except Exception as e:
+        print(f"❌ Modal call failed: {e}")
         return None
 
-    if result.returncode != 0:
-        print("❌ Notebook execution failed.")
-        print("STDERR:", result.stderr[-2000:])
+    if not result["success"]:
+        print(f"❌ Remote execution failed:\n{result['error'][-1000:]}")
         return None
 
-    print("✅ Notebook executed successfully.")
+    # Write executed notebook back (with embedded outputs)
+    with open(notebook_path, "wb") as f:
+        f.write(result["executed_nb"])
+    print("✅ Executed notebook written back.")
 
-    # ------------------------------------------------------------------
-    # Extract standalone PNGs from the executed notebook's cell outputs.
-    # nbconvert embeds plots as base64 image/png data in the notebook
-    # JSON. We decode these and save them as separate files.
-    # ------------------------------------------------------------------
-    metrics = _extract_outputs(notebook_path, save_dir)
-    return metrics
-
-
-def _extract_outputs(notebook_path: str, save_dir: str) -> dict:
-    """
-    Open the executed notebook JSON, find image outputs and stdout,
-    save images as PNGs, and parse metrics from stdout text.
-
-    Returns parsed metrics dict or None.
-    """
-    with open(notebook_path, "r", encoding="utf-8") as f:
-        nb = json.load(f)
-
-    stdout_text = ""
-    image_index = 0
-
-    # Map of expected image filenames in the order they appear
-    image_names = ["heatmap.png", "scatter.png", "residual.png"]
-
-    for cell in nb.get("cells", []):
-        if cell.get("cell_type") != "code":
-            continue
-
-        for output in cell.get("outputs", []):
-            # Collect all stdout for metric parsing
-            if output.get("output_type") in ("stream",) and output.get("name") == "stdout":
-                stdout_text += "".join(output.get("text", []))
-
-            # Extract embedded PNG images
-            data = output.get("data", {})
-            if "image/png" in data:
-                png_b64 = data["image/png"]
-                if isinstance(png_b64, list):
-                    png_b64 = "".join(png_b64)
-
-                # Determine which image this is based on order
-                # The notebook saves them in order: heatmap, scatter, residual
-                if image_index < len(image_names):
-                    img_path = os.path.join(save_dir, image_names[image_index])
-                    with open(img_path, "wb") as img_f:
-                        img_f.write(base64.b64decode(png_b64))
-                    print(f"  ✅ Extracted: {image_names[image_index]}")
-                    image_index += 1
-
-    # ------------------------------------------------------------------
-    # Parse metrics from the FINAL METRICS block in stdout
-    # ------------------------------------------------------------------
-    if "DONE" not in stdout_text:
-        print("❌ Notebook did not reach the DONE marker — execution may be incomplete.")
-        return None
-
-    def extract(key):
-        match = re.search(rf"{key}=([\d\.\-]+)", stdout_text)
-        return match.group(1) if match else "N/A"
-
-    def extract_str(key):
-        match = re.search(rf"{key}=([^\n]+)", stdout_text)
-        return match.group(1).strip() if match else "N/A"
-
-    metrics = {
-        "r2":          float(extract("SKLEARN_R2"))  if extract("SKLEARN_R2")  != "N/A" else 0.0,
-        "mse":         float(extract("SKLEARN_MSE")) if extract("SKLEARN_MSE") != "N/A" else 0.0,
-        "mae":         float(extract("SKLEARN_MAE")) if extract("SKLEARN_MAE") != "N/A" else 0.0,
-        "ridge_r2":    float(extract("RIDGE_R2"))    if extract("RIDGE_R2")    != "N/A" else 0.0,
-        "top_feature": extract_str("TOP_FEATURE"),
-        "top_coef":    extract("TOP_COEF"),
+    # Write extracted PNG files
+    png_map = {
+        "heatmap.png":  result["heatmap_png"],
+        "scatter.png":  result["scatter_png"],
+        "residual.png": result["residual_png"],
     }
 
-    print(f"  ✅ Metrics parsed: R²={metrics['r2']:.4f} | MAE={metrics['mae']:.2f}")
+    for fname, data in png_map.items():
+        if data:
+            fpath = os.path.join(save_dir, fname)
+            with open(fpath, "wb") as f:
+                f.write(data)
+            print(f"  ✅ Extracted: {fname}")
+        else:
+            print(f"  ⚠️  {fname} not found in notebook outputs")
 
-    # Verify all 3 plot files exist
-    for img_name in image_names:
-        img_path = os.path.join(save_dir, img_name)
-        if not os.path.exists(img_path):
-            print(f"⚠️  Warning: {img_name} not found — may not have been generated.")
+    # Parse metrics from stdout
+    stdout = result["stdout_text"]
+    metrics = _parse_metrics(stdout)
 
+    if metrics is None:
+        print("❌ Could not parse metrics from notebook output.")
+        print("STDOUT tail:", stdout[-500:])
+        return None
+
+    print(f"✅ Metrics parsed: R²={metrics['r2']:.4f} | MAE={metrics['mae']:.2f}")
     return metrics
+
+
+def _parse_metrics(stdout: str) -> dict:
+    """Parse the FINAL METRICS block printed by the notebook."""
+    if "DONE" not in stdout:
+        return None
+
+    def extract_float(key):
+        m = re.search(rf"{key}=([\d\.\-]+)", stdout)
+        return float(m.group(1)) if m else 0.0
+
+    def extract_str(key):
+        m = re.search(rf"{key}=([^\n]+)", stdout)
+        return m.group(1).strip() if m else "N/A"
+
+    return {
+        "r2":          extract_float("SKLEARN_R2"),
+        "mse":         extract_float("SKLEARN_MSE"),
+        "mae":         extract_float("SKLEARN_MAE"),
+        "ridge_r2":    extract_float("RIDGE_R2"),
+        "top_feature": extract_str("TOP_FEATURE"),
+        "top_coef":    extract_str("TOP_COEF"),
+    }

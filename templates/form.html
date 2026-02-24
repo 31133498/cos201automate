@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Assignment Portal</title>
+  <title>COS201 — Assignment Portal</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet" />
   <style>
     :root {
@@ -33,7 +33,6 @@
       overflow-x: hidden;
     }
 
-    /* Grid background */
     body::before {
       content: '';
       position: fixed;
@@ -60,7 +59,7 @@
     }
 
     /* ── HEADER ── */
-    .header { margin-bottom: 2.5rem; text-align: left; }
+    .header { margin-bottom: 2.5rem; }
 
     .badge {
       display: inline-block;
@@ -82,17 +81,12 @@
       font-weight: 600;
       line-height: 1.2;
       letter-spacing: -0.02em;
-      color: var(--text);
       margin-bottom: 0.5rem;
     }
 
     h1 span { color: var(--accent); }
 
-    .subtitle {
-      font-size: 0.875rem;
-      color: var(--muted);
-      line-height: 1.6;
-    }
+    .subtitle { font-size: 0.875rem; color: var(--muted); line-height: 1.6; }
 
     /* ── CARD ── */
     .card {
@@ -112,7 +106,7 @@
       background: linear-gradient(90deg, var(--accent), var(--accent2));
     }
 
-    /* ── FORM FIELDS ── */
+    /* ── FORM ── */
     .field { margin-bottom: 1.5rem; }
 
     label {
@@ -166,11 +160,7 @@
 
     .btn:hover  { background: #6ffcb3; }
     .btn:active { transform: scale(0.99); }
-    .btn:disabled {
-      background: #1f2430;
-      color: var(--muted);
-      cursor: not-allowed;
-    }
+    .btn:disabled { background: #1f2430; color: var(--muted); cursor: not-allowed; }
 
     /* ── PROGRESS SECTION ── */
     .progress-section {
@@ -179,7 +169,6 @@
       padding-top: 1.75rem;
       border-top: 1px solid var(--border);
     }
-
     .progress-section.active { display: block; }
 
     .progress-header {
@@ -206,13 +195,11 @@
       border-radius: 2px;
       transition: all 0.3s;
     }
-
     .status-badge.pending    { color: var(--warn);    background: rgba(246,173,85,0.08);  border: 1px solid rgba(246,173,85,0.2); }
     .status-badge.processing { color: var(--accent2); background: rgba(45,156,219,0.08);  border: 1px solid rgba(45,156,219,0.2); }
     .status-badge.completed  { color: var(--accent);  background: rgba(74,242,161,0.08);  border: 1px solid rgba(74,242,161,0.2); }
     .status-badge.failed     { color: var(--error);   background: rgba(255,107,107,0.08); border: 1px solid rgba(255,107,107,0.2); }
 
-    /* Elapsed timer */
     .elapsed {
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.65rem;
@@ -235,10 +222,10 @@
       background: linear-gradient(90deg, var(--accent), var(--accent2));
       border-radius: 1px;
       width: 0%;
-      transition: width 0.6s ease;
+      transition: width 0.5s ease;
     }
 
-    /* Step cards */
+    /* Steps */
     .steps { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.25rem; }
 
     .step {
@@ -251,33 +238,15 @@
       transition: all 0.35s ease;
     }
 
-    .step.waiting {
-      background: rgba(255,255,255,0.01);
-      border-color: var(--border);
-    }
-
-    .step.active {
-      background: rgba(45,156,219,0.06);
-      border-color: rgba(45,156,219,0.2);
-    }
-
-    .step.done {
-      background: rgba(74,242,161,0.04);
-      border-color: rgba(74,242,161,0.15);
-    }
-
-    .step.error {
-      background: rgba(255,107,107,0.04);
-      border-color: rgba(255,107,107,0.15);
-    }
+    .step.waiting  { background: rgba(255,255,255,0.01); border-color: var(--border); }
+    .step.active   { background: rgba(45,156,219,0.06);  border-color: rgba(45,156,219,0.2); }
+    .step.done     { background: rgba(74,242,161,0.04);  border-color: rgba(74,242,161,0.15); }
+    .step.error    { background: rgba(255,107,107,0.04); border-color: rgba(255,107,107,0.15); }
 
     .step-icon {
-      width: 20px;
-      height: 20px;
+      width: 20px; height: 20px;
       border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      display: flex; align-items: center; justify-content: center;
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.6rem;
       font-weight: 600;
@@ -286,13 +255,13 @@
     }
 
     .step.waiting .step-icon { background: var(--border);  color: var(--muted); }
-    .step.active  .step-icon { background: var(--accent2); color: white; animation: spinPulse 1.2s ease-in-out infinite; }
+    .step.active  .step-icon { background: var(--accent2); color: white; animation: pulse-ring 1.2s ease-in-out infinite; }
     .step.done    .step-icon { background: var(--accent);  color: #0d0f14; }
     .step.error   .step-icon { background: var(--error);   color: white; }
 
-    @keyframes spinPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(45,156,219,0.4); }
-      50%       { box-shadow: 0 0 0 4px rgba(45,156,219,0); }
+    @keyframes pulse-ring {
+      0%, 100% { box-shadow: 0 0 0 0   rgba(45,156,219,0.5); }
+      50%       { box-shadow: 0 0 0 5px rgba(45,156,219,0); }
     }
 
     .step-label {
@@ -302,9 +271,8 @@
       flex: 1;
       transition: color 0.3s;
     }
-
     .step.active .step-label { color: var(--text); font-weight: 600; }
-    .step.done   .step-label { color: rgba(74,242,161,0.75); }
+    .step.done   .step-label { color: rgba(74,242,161,0.8); }
     .step.error  .step-label { color: var(--error); }
 
     .step-time {
@@ -313,7 +281,7 @@
       color: var(--muted);
     }
 
-    /* ── ALERT ── */
+    /* Alert */
     .alert {
       display: none;
       padding: 0.75rem 1rem;
@@ -324,13 +292,11 @@
       margin-top: 0.75rem;
       border-left: 2px solid;
     }
-
     .alert.active  { display: block; }
     .alert.success { background: rgba(74,242,161,0.06);  border-color: var(--success); color: var(--success); }
     .alert.error   { background: rgba(255,107,107,0.06); border-color: var(--error);   color: var(--error); }
-    .alert.info    { background: rgba(45,156,219,0.06);  border-color: var(--accent2); color: var(--accent2); }
 
-    /* ── DOWNLOAD BUTTON ── */
+    /* Download button */
     .btn-download {
       display: none;
       width: 100%;
@@ -351,21 +317,15 @@
       transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
       animation: popIn 0.4s cubic-bezier(0.16,1,0.3,1) both;
     }
-
     @keyframes popIn {
       from { opacity: 0; transform: scale(0.97); }
       to   { opacity: 1; transform: scale(1); }
     }
-
-    .btn-download:hover {
-      background: rgba(74,242,161,0.07);
-      box-shadow: 0 0 20px rgba(74,242,161,0.15);
-    }
-
+    .btn-download:hover { background: rgba(74,242,161,0.07); box-shadow: 0 0 20px rgba(74,242,161,0.15); }
     .btn-download:active { transform: scale(0.99); }
     .btn-download.visible { display: block; }
 
-    /* ── FOOTER ── */
+    /* Footer */
     .note {
       margin-top: 1.5rem;
       font-size: 0.78rem;
@@ -373,7 +333,6 @@
       text-align: center;
       line-height: 1.6;
     }
-
     .note code {
       font-family: 'IBM Plex Mono', monospace;
       color: var(--accent);
@@ -383,7 +342,7 @@
     }
 
     @media (max-width: 500px) {
-      body { padding: 2rem 0; }
+      body { padding: 1.5rem 0; }
       .header, .note { padding: 0 1.25rem; }
     }
   </style>
@@ -391,7 +350,6 @@
 <body>
   <div class="container">
 
-    <!-- Header -->
     <div class="header">
       <div class="badge">COS201 · Assignment System</div>
       <h1>Collect Your<br /><span>Assignment</span></h1>
@@ -401,7 +359,6 @@
       </p>
     </div>
 
-    <!-- Card -->
     <div class="card">
       <form id="assignmentForm">
 
@@ -430,11 +387,11 @@
           Generate My Assignment →
         </button>
 
-        <!-- ── PROGRESS SECTION ── -->
+        <!-- Progress section -->
         <div class="progress-section" id="progressSection">
 
           <div class="progress-header">
-            <span class="progress-label">Job Progress</span>
+            <span class="progress-label">Pipeline Progress</span>
             <span class="status-badge pending" id="statusBadge">Queued</span>
           </div>
 
@@ -444,7 +401,11 @@
             <div class="progress-fill" id="progressFill"></div>
           </div>
 
-          <div class="steps" id="stepsContainer">
+          <!--
+            Steps 0-6 map 1:1 to pipeline stages in __init__.py.
+            current_step from /status drives which step is active.
+          -->
+          <div class="steps">
             <div class="step waiting" id="step-0">
               <div class="step-icon">1</div>
               <span class="step-label">Generating dataset</span>
@@ -452,28 +413,33 @@
             </div>
             <div class="step waiting" id="step-1">
               <div class="step-icon">2</div>
-              <span class="step-label">Building notebook</span>
+              <span class="step-label">Writing AI narrative (OpenAI)</span>
               <span class="step-time" id="time-1"></span>
             </div>
             <div class="step waiting" id="step-2">
               <div class="step-icon">3</div>
-              <span class="step-label">Executing notebook &amp; plots</span>
+              <span class="step-label">Building notebook</span>
               <span class="step-time" id="time-2"></span>
             </div>
             <div class="step waiting" id="step-3">
               <div class="step-icon">4</div>
-              <span class="step-label">Generating defense guide</span>
+              <span class="step-label">Executing notebook on Modal</span>
               <span class="step-time" id="time-3"></span>
             </div>
             <div class="step waiting" id="step-4">
               <div class="step-icon">5</div>
-              <span class="step-label">Packaging &amp; uploading files</span>
+              <span class="step-label">Generating defense guide</span>
               <span class="step-time" id="time-4"></span>
             </div>
             <div class="step waiting" id="step-5">
               <div class="step-icon">6</div>
-              <span class="step-label">Sending confirmation email</span>
+              <span class="step-label">Packaging &amp; uploading to Cloudinary</span>
               <span class="step-time" id="time-5"></span>
+            </div>
+            <div class="step waiting" id="step-6">
+              <div class="step-icon">7</div>
+              <span class="step-label">Sending confirmation email</span>
+              <span class="step-time" id="time-6"></span>
             </div>
           </div>
 
@@ -496,9 +462,7 @@
   </div>
 
 <script>
-// ─────────────────────────────────────────
-// DOM refs
-// ─────────────────────────────────────────
+// ─── DOM ───────────────────────────────────────────────────
 const form            = document.getElementById('assignmentForm');
 const submitBtn       = document.getElementById('submitBtn');
 const progressSection = document.getElementById('progressSection');
@@ -509,39 +473,24 @@ const alertBox        = document.getElementById('alertBox');
 const downloadBtn     = document.getElementById('downloadBtn');
 const tokenInput      = document.getElementById('token');
 
-// ─────────────────────────────────────────
-// Step timing config (ms per step)
-// These are approximations of real durations
-// ─────────────────────────────────────────
-const STEPS = [
-  { duration: 4000  },   // 1 — dataset
-  { duration: 3000  },   // 2 — build notebook
-  { duration: 25000 },   // 3 — execute notebook (slowest)
-  { duration: 2000  },   // 4 — defense guide
-  { duration: 7000  },   // 5 — package + upload
-  { duration: 3000  },   // 6 — email
-];
+const TOTAL_STEPS = 7;   // steps 0-6
 
-// ─────────────────────────────────────────
-// State
-// ─────────────────────────────────────────
-let jobId          = null;
-let pollHandle     = null;
-let stepHandle     = null;
-let elapsedHandle  = null;
-let elapsedSecs    = 0;
-let stepStartTimes = {};
+// ─── State ─────────────────────────────────────────────────
+let jobId         = null;
+let pollHandle    = null;
+let elapsedHandle = null;
+let elapsedSecs   = 0;
+let lastStep      = -1;       // last current_step value seen from server
+let stepStartSecs = {};       // step index → elapsed seconds when step started
 
-// ─────────────────────────────────────────
-// Token input auto-uppercase
-// ─────────────────────────────────────────
+// ─── Token auto-uppercase ──────────────────────────────────
 tokenInput.addEventListener('input', () => {
   tokenInput.value = tokenInput.value.toUpperCase();
 });
 
-// ─────────────────────────────────────────
-// UI helpers
-// ─────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────
+function pad(n) { return String(n).padStart(2, '0'); }
+
 function showAlert(msg, type) {
   alertBox.textContent = msg;
   alertBox.className   = `alert active ${type}`;
@@ -557,11 +506,7 @@ function setProgress(pct) {
   progressFill.style.width = Math.min(pct, 100) + '%';
 }
 
-function pad(n) { return String(n).padStart(2, '0'); }
-
-// ─────────────────────────────────────────
-// Elapsed clock
-// ─────────────────────────────────────────
+// ─── Elapsed clock ─────────────────────────────────────────
 function startElapsed() {
   elapsedSecs   = 0;
   elapsedHandle = setInterval(() => {
@@ -572,138 +517,143 @@ function startElapsed() {
 
 function stopElapsed() { clearInterval(elapsedHandle); }
 
-// ─────────────────────────────────────────
-// Step state helpers
-// ─────────────────────────────────────────
-function setStep(index, state) {
-  const el   = document.getElementById(`step-${index}`);
-  const icon = el && el.querySelector('.step-icon');
-  const time = document.getElementById(`time-${index}`);
-  if (!el) return;
+// ─── Step rendering ────────────────────────────────────────
+// State is driven entirely by current_step from the server.
+// When the server says step N is active, we mark 0..N-1 done
+// and N active. No client-side timer advances steps.
 
-  el.className = `step ${state}`;
+function renderSteps(currentStep, isFailed) {
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const el   = document.getElementById(`step-${i}`);
+    const icon = el.querySelector('.step-icon');
+    const time = document.getElementById(`time-${i}`);
 
-  if (state === 'active') {
-    icon.textContent = '●';
-    stepStartTimes[index] = elapsedSecs;
-  } else if (state === 'done') {
-    icon.textContent = '✓';
-    if (time) {
-      const took = elapsedSecs - (stepStartTimes[index] || elapsedSecs);
-      time.textContent = `${took}s`;
+    if (isFailed && i === currentStep) {
+      el.className    = 'step error';
+      icon.textContent = '✗';
+    } else if (i < currentStep) {
+      // Already done
+      if (el.className !== 'step done') {
+        el.className    = 'step done';
+        icon.textContent = '✓';
+        // Record time taken for this step
+        if (time && stepStartSecs[i] !== undefined) {
+          const took = elapsedSecs - stepStartSecs[i];
+          time.textContent = `${took}s`;
+        }
+      }
+    } else if (i === currentStep) {
+      // Currently active
+      if (el.className !== 'step active') {
+        el.className    = 'step active';
+        icon.textContent = '●';
+        stepStartSecs[i] = elapsedSecs;   // record when this step started
+      }
+    } else {
+      // Future step — keep waiting
+      if (!['step done', 'step error'].includes(el.className)) {
+        el.className    = 'step waiting';
+        icon.textContent = i + 1;
+      }
     }
-  } else if (state === 'error') {
-    icon.textContent = '✗';
-  } else {
-    // waiting — restore number
-    icon.textContent = index + 1;
-  }
-}
-
-// ─────────────────────────────────────────
-// Step simulation
-// Advances automatically on timers while the
-// real job runs in the background.
-// ─────────────────────────────────────────
-function startStepSimulation() {
-  let idx = 0;
-  setStep(0, 'active');
-  setProgress(8);
-
-  function advance() {
-    setStep(idx, 'done');
-    idx++;
-    if (idx >= STEPS.length) return;
-
-    setStep(idx, 'active');
-    setProgress(8 + (idx / STEPS.length) * 80);
-    stepHandle = setTimeout(advance, STEPS[idx].duration);
   }
 
-  stepHandle = setTimeout(advance, STEPS[0].duration);
+  // Progress bar: fill proportionally to current step
+  if (currentStep >= 0) {
+    setProgress((currentStep / TOTAL_STEPS) * 95);
+  }
 }
 
 function completeAllSteps() {
-  clearTimeout(stepHandle);
-  for (let i = 0; i < STEPS.length; i++) {
-    const el = document.getElementById(`step-${i}`);
-    if (el && !el.classList.contains('done') && !el.classList.contains('error')) {
-      // Use current time for any steps that hadn't recorded a start
-      if (!stepStartTimes[i]) stepStartTimes[i] = elapsedSecs;
-      setStep(i, 'done');
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const el   = document.getElementById(`step-${i}`);
+    const icon = el.querySelector('.step-icon');
+    const time = document.getElementById(`time-${i}`);
+    el.className    = 'step done';
+    icon.textContent = '✓';
+    if (time && stepStartSecs[i] !== undefined && !time.textContent) {
+      time.textContent = `${elapsedSecs - stepStartSecs[i]}s`;
     }
   }
   setProgress(100);
 }
 
-function failAtCurrentStep() {
-  clearTimeout(stepHandle);
-  for (let i = 0; i < STEPS.length; i++) {
-    const el = document.getElementById(`step-${i}`);
-    if (el && el.classList.contains('active')) {
-      setStep(i, 'error');
-      return;
-    }
-  }
-}
+// ─── Polling ───────────────────────────────────────────────
+// Polls /status/:jobId every 3 seconds.
+// Uses current_step from server to drive step cards directly.
 
-// ─────────────────────────────────────────
-// Polling — hits /status/:jobId every 3s
-// ─────────────────────────────────────────
 function startPolling(id) {
   pollHandle = setInterval(async () => {
     try {
       const res  = await fetch(`/status/${id}`);
       const data = await res.json();
 
-      setStatusBadge(data.status);
+      const step = data.current_step ?? -1;
 
+      // Update badge when status changes
+      if (data.status === 'processing' || data.status === 'pending') {
+        setStatusBadge('processing');
+      }
+
+      // Advance step cards based on server's current_step
+      if (step !== lastStep && step >= 0 && data.status !== 'completed') {
+        lastStep = step;
+        renderSteps(step, false);
+      }
+
+      // ── COMPLETED ──
       if (data.status === 'completed') {
         clearInterval(pollHandle);
         stopElapsed();
         completeAllSteps();
+        setStatusBadge('completed');
         showAlert('✓ Assignment ready. Click below to download.', 'success');
         downloadBtn.href = data.zip_url;
         downloadBtn.classList.add('visible');
-        submitBtn.disabled = false;
+        submitBtn.disabled    = false;
         submitBtn.textContent = 'Generate My Assignment →';
       }
 
+      // ── FAILED ──
       if (data.status === 'failed') {
         clearInterval(pollHandle);
         stopElapsed();
-        failAtCurrentStep();
+        setStatusBadge('failed');
+        renderSteps(Math.max(step, 0), true);
         showAlert('✗ ' + (data.message || 'Job failed. Please contact your lecturer.'), 'error');
-        submitBtn.disabled = false;
+        submitBtn.disabled    = false;
         submitBtn.textContent = 'Generate My Assignment →';
       }
 
     } catch (err) {
-      // Network blip — keep polling silently
+      // Network blip — keep polling
       console.warn('Poll error:', err);
     }
   }, 3000);
 }
 
-// ─────────────────────────────────────────
-// Reset UI to initial state
-// ─────────────────────────────────────────
+// ─── Reset UI ──────────────────────────────────────────────
 function resetUI() {
   clearInterval(pollHandle);
-  clearTimeout(stepHandle);
   stopElapsed();
   elapsedTimer.textContent = '00:00';
   setProgress(0);
   alertBox.className = 'alert';
   downloadBtn.classList.remove('visible');
   downloadBtn.href = '#';
-  for (let i = 0; i < STEPS.length; i++) setStep(i, 'waiting');
-  stepStartTimes = {};
+  lastStep    = -1;
+  stepStartSecs = {};
+  for (let i = 0; i < TOTAL_STEPS; i++) {
+    const el   = document.getElementById(`step-${i}`);
+    const icon = el.querySelector('.step-icon');
+    const time = document.getElementById(`time-${i}`);
+    el.className    = 'step waiting';
+    icon.textContent = i + 1;
+    if (time) time.textContent = '';
+  }
 }
 
-// ─────────────────────────────────────────
-// Form submit handler
-// ─────────────────────────────────────────
+// ─── Form submit ───────────────────────────────────────────
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   resetUI();
@@ -726,7 +676,6 @@ form.addEventListener('submit', async (e) => {
     });
     const data = await res.json();
 
-    // Always show the progress section after first attempt
     progressSection.classList.add('active');
 
     if (!data.success) {
@@ -741,13 +690,14 @@ form.addEventListener('submit', async (e) => {
     jobId = data.job_id;
     setStatusBadge('pending');
     submitBtn.textContent = 'Working...';
-    form.querySelector('#student_name').value = '';
-    form.querySelector('#matric_no').value    = '';
-    form.querySelector('#student_email').value = '';
+
+    // Clear form inputs but keep progress section visible
+    document.getElementById('student_name').value  = '';
+    document.getElementById('matric_no').value     = '';
+    document.getElementById('student_email').value = '';
     tokenInput.value = '';
 
     startElapsed();
-    startStepSimulation();
     startPolling(jobId);
 
   } catch (err) {
