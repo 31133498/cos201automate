@@ -1,0 +1,13 @@
+flask
+python-dotenv
+pandas
+numpy
+nbformat
+nbconvert
+jupyter
+statsmodels
+scikit-learn
+matplotlib
+seaborn
+cloudinary
+sendgrid
