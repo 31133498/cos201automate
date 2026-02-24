@@ -1,83 +1,64 @@
 # ============================================================
-# pipeline/token_manager.py
-#
-# Handles everything related to tokens:
-#   - Creating the database table
-#   - Validating and consuming a token when a student submits
-#
-# Tokens are completely anonymous — no name, no matric, no email
-# stored against them. The student provides their own details
-# at submission time. The token just proves they have permission.
+# pipeline/token_manager.py (Production Version)
+# Uses PostgreSQL via SQLAlchemy
+# Atomic token consumption
 # ============================================================
 
-import sqlite3
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-from config import DB_PATH
+
+db = SQLAlchemy()
 
 
-def init_db():
+class Token(db.Model):
+    __tablename__ = "tokens"
+
+    token   = db.Column(db.String(32), primary_key=True)
+    used    = db.Column(db.Boolean, default=False, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+
+
+def init_db(app):
+    db.init_app(app)
+    with app.app_context():
+        db.create_all()
+
+
+def validate_and_consume(token_value: str) -> bool:
     """
-    Create the tokens table if it doesn't already exist.
-    Called once at app startup. Safe to call multiple times.
-    
-    Table structure:
-        token    — the unique code e.g. 'K7F2MNP9XQ3L'
-        used     — 0 (unused) or 1 (consumed)
-        used_at  — ISO timestamp of when it was consumed, or NULL
+    Atomic token validation.
+    Uses SELECT FOR UPDATE to prevent race conditions.
     """
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tokens (
-            token    TEXT PRIMARY KEY,
-            used     INTEGER DEFAULT 0,
-            used_at  TEXT
+
+    try:
+        token = (
+            db.session.query(Token)
+            .filter_by(token=token_value, used=False)
+            .with_for_update()
+            .first()
         )
-    """)
-    conn.commit()
-    conn.close()
 
+        if not token:
+            return False
 
-def validate_and_consume(token: str) -> bool:
-    """
-    Check if a token exists and is unused.
-    If valid: mark it as used immediately and return True.
-    If invalid or already used: return False.
+        token.used = True
+        token.used_at = datetime.utcnow()
 
-    The token is marked used the instant it is validated —
-    before any processing starts — so even if the pipeline
-    crashes halfway through, the token cannot be reused.
-    """
-    conn = sqlite3.connect(DB_PATH)
+        db.session.commit()
+        return True
 
-    row = conn.execute(
-        "SELECT token FROM tokens WHERE token = ? AND used = 0",
-        (token,)
-    ).fetchone()
-
-    if row is None:
-        conn.close()
+    except Exception:
+        db.session.rollback()
         return False
 
-    # Consume immediately
-    conn.execute(
-        "UPDATE tokens SET used = 1, used_at = ? WHERE token = ?",
-        (datetime.now().isoformat(), token)
-    )
-    conn.commit()
-    conn.close()
-    return True
 
-
-def get_all_token_status() -> list:
-    """
-    Return all tokens and their status.
-    Used by the admin to see who has collected and who hasn't.
-    Returns a list of dicts: {token, used, used_at}
-    """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT token, used, used_at FROM tokens ORDER BY used, token"
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
+def get_all_token_status():
+    tokens = Token.query.order_by(Token.used, Token.token).all()
+    return [
+        {
+            "token": t.token,
+            "used": t.used,
+            "used_at": t.used_at.isoformat() if t.used_at else None,
+        }
+        for t in tokens
+    ]

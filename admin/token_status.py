@@ -1,65 +1,54 @@
 # ============================================================
 # admin/token_status.py
 #
-# ADMIN ONLY — check which tokens have been used.
+# ADMIN ONLY — check token usage against PostgreSQL.
 #
 # USAGE:
-#   cd cos201_system
-#   python admin/token_status.py
-#
-#   Optional filter:
-#   python admin/token_status.py used     (show only used)
-#   python admin/token_status.py unused   (show only unused)
+#   python admin/token_status.py            # all tokens
+#   python admin/token_status.py used       # only used
+#   python admin/token_status.py unused     # only unused
 # ============================================================
 
 import sys
 import os
-import sqlite3
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config import DB_PATH
+
+from config import DATABASE_URL
+from sqlalchemy import create_engine, text
 
 
 def show_status(filter_by: str = "all"):
-    if not os.path.exists(DB_PATH):
-        print(f"❌ Database not found at: {DB_PATH}")
-        print("   Run admin/generate_tokens.py first.")
-        return
+    engine = create_engine(DATABASE_URL)
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    with engine.connect() as conn:
+        # Counts
+        total  = conn.execute(text("SELECT COUNT(*) FROM tokens")).scalar()
+        used   = conn.execute(text("SELECT COUNT(*) FROM tokens WHERE used = TRUE")).scalar()
+        unused = total - used
 
-    query = "SELECT token, used, used_at FROM tokens"
-    if filter_by == "used":
-        query += " WHERE used = 1"
-    elif filter_by == "unused":
-        query += " WHERE used = 0"
-    query += " ORDER BY used, token"
+        # Rows
+        if filter_by == "used":
+            where = "WHERE used = TRUE"
+        elif filter_by == "unused":
+            where = "WHERE used = FALSE"
+        else:
+            where = ""
 
-    rows = conn.execute(query).fetchall()
-    conn.close()
+        rows = conn.execute(
+            text(f"SELECT token, used, used_at FROM tokens {where} ORDER BY used, token")
+        ).fetchall()
 
-    total  = conn.execute("SELECT COUNT(*) FROM sqlite3.connect(DB_PATH)").fetchone()[0] if False else None
-    conn2  = sqlite3.connect(DB_PATH)
-    total  = conn2.execute("SELECT COUNT(*) FROM tokens").fetchone()[0]
-    used   = conn2.execute("SELECT COUNT(*) FROM tokens WHERE used=1").fetchone()[0]
-    unused = total - used
-    conn2.close()
-
-    print(f"\n{'='*60}")
-    print(f"  TOKEN STATUS REPORT")
-    print(f"  Database : {DB_PATH}")
-    print(f"  Total    : {total}  |  Used: {used}  |  Unused: {unused}")
-    print(f"{'='*60}")
-    print(f"  {'TOKEN':<15} {'STATUS':<12} {'USED AT'}")
-    print(f"  {'-'*55}")
-
+    print(f"\n{'='*65}")
+    print(f"  TOKEN STATUS  |  Total: {total}  Used: {used}  Unused: {unused}")
+    print(f"{'='*65}")
+    print(f"  {'TOKEN':<15} {'STATUS':<14} {'USED AT'}")
+    print(f"  {'-'*60}")
     for row in rows:
-        status  = "✅ USED" if row["used"] else "⏳ UNUSED"
-        used_at = row["used_at"] or ""
-        print(f"  {row['token']:<15} {status:<12} {used_at}")
-
-    print(f"{'='*60}\n")
+        status  = "✅ USED   " if row.used else "⏳ UNUSED "
+        used_at = str(row.used_at) if row.used_at else ""
+        print(f"  {row.token:<15} {status:<14} {used_at}")
+    print(f"{'='*65}\n")
 
 
 if __name__ == "__main__":

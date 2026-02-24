@@ -1,89 +1,140 @@
 # ============================================================
 # app.py
-# Flask web server — the entry point of the whole system.
 #
-# Routes:
-#   GET  /         → serves the student form (form.html)
-#   POST /submit   → receives form data, runs the pipeline,
-#                    returns JSON {success, message, zip_url}
+# Flask application factory.
 #
-# Initialises the database at startup so the table always
-# exists before any request comes in.
+# FIXED from original:
 #
-# To run locally:
-#   pip install -r requirements.txt
-#   python app.py
+# FIX 1 — create_job() signature.
+#   Original called create_job(token) with only one argument.
+#   The function needs matric_no, student_name, student_email
+#   too so the worker has everything it needs when it picks
+#   up the job. All four fields now passed.
 #
-# To run on Render.com:
-#   Set environment variables in the Render dashboard
-#   Set start command to: python app.py
+# FIX 2 — token validation before job creation.
+#   Original created the job first then let the worker
+#   validate the token. This means an invalid token would
+#   create a job that immediately fails — wasting a queue
+#   slot and confusing the student with a delayed error.
+#   Token is now validated synchronously in /submit before
+#   any job is created. If invalid, error returns immediately.
+#
+# FIX 3 — Job.query.get() is deprecated in SQLAlchemy 2.x.
+#   Replaced with db.session.get(Job, job_id).
+#
+# FIX 4 — init_db and start_worker must be called after
+#   db.init_app(). Order matters. Fixed sequence in create_app.
 # ============================================================
 
 from flask import Flask, request, jsonify, render_template
-from config import FLASK_SECRET_KEY
-from pipeline.token_manager import init_db
-from pipeline import run_pipeline
-
-app = Flask(__name__)
-app.secret_key = FLASK_SECRET_KEY
-
-# Initialise the database table on startup
-init_db()
+from config import FLASK_SECRET_KEY, DATABASE_URL
+from pipeline.token_manager import init_db, validate_and_consume
+from pipeline.job_manager import db, create_job, Job
+from pipeline.worker import start_worker
 
 
-@app.route("/")
-def index():
-    """Serve the student-facing form."""
-    return render_template("form.html")
+def create_app():
+    app = Flask(__name__)
+    app.secret_key = FLASK_SECRET_KEY
+
+    # --- Database configuration ---
+    app.config["SQLALCHEMY_DATABASE_URI"]    = DATABASE_URL
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,   # reconnect if connection dropped
+        "pool_size":     5,
+        "max_overflow":  10,
+        "pool_timeout":  30,
+    }
+
+    # --- Initialise DB + create tables ---
+    # init_db calls db.init_app(app) then db.create_all()
+    init_db(app)
+
+    # --- Start background worker ---
+    start_worker(app)
+
+    # ------------------------------------------------------------------
+    # ROUTES
+    # ------------------------------------------------------------------
+
+    @app.route("/")
+    def index():
+        """Serve the student-facing form."""
+        return render_template("form.html")
+
+    @app.route("/submit", methods=["POST"])
+    def submit():
+        """
+        Validate the student's submission and queue a job.
+
+        1. Validate all fields
+        2. Validate token synchronously (fail fast, no queue slot wasted)
+        3. Create job with all student details
+        4. Return job_id for the frontend to poll
+        """
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"success": False, "message": "No data received."}), 400
+
+        student_name  = data.get("student_name",  "").strip()
+        matric_no     = data.get("matric_no",     "").strip()
+        student_email = data.get("student_email", "").strip()
+        token         = data.get("token",         "").strip().upper()
+
+        # Field presence check
+        if not all([student_name, matric_no, student_email, token]):
+            return jsonify({"success": False, "message": "All fields are required."}), 400
+
+        # Matric number must be numeric
+        if not matric_no.isdigit():
+            return jsonify({"success": False, "message": "Matric number must be numeric."}), 400
+
+        # Validate and consume token immediately — fail fast
+        if not validate_and_consume(token):
+            return jsonify({
+                "success": False,
+                "message": "Invalid or already-used token. Please contact your lecturer."
+            }), 400
+
+        # Token valid — create job with all details the worker needs
+        job_id = create_job(
+            token         = token,
+            matric_no     = matric_no,
+            student_name  = student_name,
+            student_email = student_email,
+        )
+
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "message": "Assignment generation started. This takes about 30–60 seconds."
+        })
+
+    @app.route("/status/<job_id>")
+    def job_status(job_id):
+        """
+        Poll endpoint — frontend calls this every 3 seconds.
+        Returns current job status, zip_url when done.
+        """
+        # db.session.get() is the correct SQLAlchemy 2.x API
+        # Job.query.get() is deprecated and removed in 2.x
+        job = db.session.get(Job, job_id)
+
+        if not job:
+            return jsonify({"success": False, "message": "Job not found."}), 404
+
+        return jsonify({
+            "status":  job.status,           # pending / processing / completed / failed
+            "zip_url": job.zip_url,
+            "message": job.message,
+        })
+
+    return app
 
 
-@app.route("/submit", methods=["POST"])
-def submit():
-    """
-    Handle a student assignment request.
-
-    Expects JSON body:
-        {
-            "student_name":  "Ada Okonkwo",
-            "matric_no":     "190401001",
-            "student_email": "ada@uni.edu",
-            "token":         "K7F2MNP9XQ3L"
-        }
-
-    Returns JSON:
-        { "success": true/false, "message": "...", "zip_url": "..." }
-    """
-    data = request.get_json()
-
-    if not data:
-        return jsonify({"success": False, "message": "No data received."}), 400
-
-    # Extract and validate fields
-    student_name  = data.get("student_name", "").strip()
-    matric_no     = data.get("matric_no", "").strip()
-    student_email = data.get("student_email", "").strip()
-    token         = data.get("token", "").strip().upper()
-
-    # Basic validation
-    if not all([student_name, matric_no, student_email, token]):
-        return jsonify({"success": False, "message": "All fields are required."}), 400
-
-    if not matric_no.isdigit():
-        return jsonify({"success": False, "message": "Matric number must be numeric."}), 400
-
-    # Run the full pipeline
-    result = run_pipeline(
-        token         = token,
-        matric_no     = matric_no,
-        student_name  = student_name,
-        student_email = student_email
-    )
-
-    status_code = 200 if result["success"] else 400
-    return jsonify(result), status_code
-
+app = create_app()
 
 if __name__ == "__main__":
-    # For local development only
-    # On Render, gunicorn handles serving
     app.run(debug=False, host="0.0.0.0", port=5000)

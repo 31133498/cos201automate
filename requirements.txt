@@ -11,3 +11,6 @@ matplotlib
 seaborn
 cloudinary
 sendgrid
+gunicorn
+psycopg2-binary
+flask_sqlalchemy

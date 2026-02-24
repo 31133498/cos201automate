@@ -19,7 +19,6 @@ import os
 import shutil
 import tempfile
 
-from pipeline.token_manager   import validate_and_consume
 from pipeline.dataset_engine  import generate_dataset
 from pipeline.notebook_builder import build_notebook
 from pipeline.notebook_runner  import run_notebook
@@ -56,10 +55,6 @@ def run_pipeline(token: str, matric_no: str, student_name: str, student_email: s
     # STEP 1: Token validation
     # Token is marked as used the instant it is validated.
     # ------------------------------------------------------------------
-    if not validate_and_consume(token):
-        return {"success": False, "message": "Invalid or already-used token. Please contact the admin."}
-
-    print("✅ Token validated and consumed.")
 
     # ------------------------------------------------------------------
     # STEP 2: Create isolated temp folder
