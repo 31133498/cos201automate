@@ -5,3 +5,4 @@ temp/
 *.zip
 *.pyc
 *.db
+.modal.*

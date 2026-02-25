@@ -1,17 +1,5 @@
 # ============================================================
 # pipeline/worker.py
-#
-# Two threads:
-#
-# Thread 1 — job_worker:
-#   Picks up "pending" jobs, runs phase 1 (local steps +
-#   spawn Modal), saves call_id, marks "modal_pending".
-#   Never blocks on Modal. Always free for next job.
-#
-# Thread 2 — modal_poller:
-#   Every 10 seconds, finds "modal_pending" jobs and calls
-#   collect_notebook_result(). If Modal is done, runs
-#   phase 2 (guide, zip, email) and marks completed/failed.
 # ============================================================
 
 import threading
@@ -21,28 +9,22 @@ from datetime import datetime
 
 
 def start_worker(app):
-    # Thread 1: job worker
-    t1 = threading.Thread(
-        target=_job_worker_loop, args=(app,),
-        daemon=True, name="job-worker"
-    )
+    t1 = threading.Thread(target=_job_worker_loop,   args=(app,), daemon=True, name="job-worker")
+    t2 = threading.Thread(target=_modal_poller_loop, args=(app,), daemon=True, name="modal-poller")
     t1.start()
-
-    # Thread 2: modal poller
-    t2 = threading.Thread(
-        target=_modal_poller_loop, args=(app,),
-        daemon=True, name="modal-poller"
-    )
     t2.start()
+    print("✅ job-worker + modal-poller started.", flush=True)
 
-    print("✅ job-worker and modal-poller threads started.", flush=True)
 
-
-# ─── THREAD 1: Job Worker ────────────────────────────────────
+# ── Thread 1: Job Worker ──────────────────────────────────────
 
 def _job_worker_loop(app):
     while True:
-        _process_pending_job(app)
+        try:
+            _process_pending_job(app)
+        except Exception as e:
+            print(f"❌ [job-worker] loop-level exception: {e}", flush=True)
+            traceback.print_exc()
         time.sleep(2)
 
 
@@ -53,65 +35,92 @@ def _process_pending_job(app):
 
     with app.app_context():
         try:
-            job = Job.query.filter_by(status="pending").order_by(Job.created_at).first()
+            # Simple ORM claim — works on both PostgreSQL and SQLite.
+            # We rely on the 2-second poll interval being slow enough
+            # that double-pickup is unlikely in production.
+            # On PostgreSQL with a single worker thread this is safe.
+            job = (
+                Job.query
+                .filter_by(status="pending")
+                .order_by(Job.created_at)
+                .first()
+            )
+
             if not job:
                 return
+
+            # Mark as processing immediately so the next poll won't pick it up
+            job_id       = job.id
+            student_name = job.student_name
+            token        = job.token
+            matric_no    = job.matric_no
+            student_email = job.student_email
 
             job.status       = "processing"
             job.current_step = -1
             db.session.commit()
-            job_id = job.id
-
-            print(f"\n▶ [job-worker] Job {job_id} — {job.student_name}", flush=True)
-
-            def progress_cb(n):
-                with app.app_context():
-                    j = db.session.get(Job, job_id)
-                    if j:
-                        j.current_step = n
-                        db.session.commit()
-                        print(f"  → step {n}", flush=True)
-
-            result = run_pipeline_phase1(
-                token         = job.token,
-                matric_no     = job.matric_no,
-                student_name  = job.student_name,
-                student_email = job.student_email,
-                progress_cb   = progress_cb,
-            )
-
-            with app.app_context():
-                j = db.session.get(Job, job_id)
-                if not j:
-                    return
-
-                if result["success"]:
-                    j.status        = "modal_pending"
-                    j.current_step  = 3     # waiting on Modal
-                    j.modal_call_id = result["call_id"]
-                    j.pipeline_data = result["pipeline_data"]
-                    print(f"✅ [job-worker] Job {job_id} spawned Modal. Now modal_pending.", flush=True)
-                else:
-                    j.status       = "failed"
-                    j.message      = result.get("message", "Phase 1 failed")
-                    j.completed_at = datetime.utcnow()
-                    print(f"❌ [job-worker] Job {job_id} phase 1 failed: {j.message}", flush=True)
-
-                db.session.commit()
+            print(f"\n▶ [job-worker] {job_id[:8]} — {student_name}", flush=True)
 
         except Exception as e:
-            print(f"❌ [job-worker] Exception: {e}", flush=True)
+            print(f"❌ [job-worker] DB claim error: {e}", flush=True)
             traceback.print_exc()
+            try: db.session.rollback()
+            except: pass
+            return
+
+        # ── progress_cb: default arg captures job_id at definition time ──
+        def progress_cb(n, _jid=job_id):
+            with app.app_context():
+                j = db.session.get(Job, _jid)
+                if j:
+                    j.current_step = n
+                    db.session.commit()
+            print(f"  [step {n}]", flush=True)
+
+        try:
+            result = run_pipeline_phase1(
+                token         = token,
+                matric_no     = matric_no,
+                student_name  = student_name,
+                student_email = student_email,
+                progress_cb   = progress_cb,
+            )
+        except Exception as e:
+            print(f"❌ [job-worker] phase1 exception: {e}", flush=True)
+            traceback.print_exc()
+            result = {"success": False, "message": str(e)}
+
+        with app.app_context():
+            j = db.session.get(Job, job_id)
+            if not j:
+                return
+
+            if result.get("success"):
+                j.status        = "modal_pending"
+                j.current_step  = 3
+                j.modal_call_id = result["call_id"]
+                j.pipeline_data = result["pipeline_data"]
+                print(f"✅ [job-worker] {job_id[:8]} → modal_pending", flush=True)
+            else:
+                j.status       = "failed"
+                j.message      = result.get("message", "Phase 1 failed")
+                j.completed_at = datetime.utcnow()
+                print(f"❌ [job-worker] {job_id[:8]} failed: {j.message}", flush=True)
+
+            db.session.commit()
 
 
-# ─── THREAD 2: Modal Poller ──────────────────────────────────
+# ── Thread 2: Modal Poller ────────────────────────────────────
 
 def _modal_poller_loop(app):
-    # Wait a bit at startup so DB is ready
-    time.sleep(5)
+    time.sleep(8)
     while True:
-        _poll_modal_jobs(app)
-        time.sleep(10)   # check every 10 seconds
+        try:
+            _poll_modal_jobs(app)
+        except Exception as e:
+            print(f"❌ [modal-poller] loop-level exception: {e}", flush=True)
+            traceback.print_exc()
+        time.sleep(10)
 
 
 def _poll_modal_jobs(app):
@@ -120,59 +129,65 @@ def _poll_modal_jobs(app):
     from pipeline import run_pipeline_phase2
 
     with app.app_context():
-        jobs = Job.query.filter_by(status="modal_pending").all()
+        try:
+            jobs = Job.query.filter_by(status="modal_pending").all()
+        except Exception as e:
+            print(f"❌ [modal-poller] DB query error: {e}", flush=True)
+            traceback.print_exc()
+            try: db.session.rollback()
+            except: pass
+            return
+
         if not jobs:
             return
 
-        print(f"[modal-poller] Checking {len(jobs)} modal_pending job(s)...", flush=True)
+        print(f"[modal-poller] {len(jobs)} modal_pending job(s).", flush=True)
 
         for job in jobs:
-            job_id = job.id
-            try:
-                def progress_cb(n):
-                    with app.app_context():
-                        j = db.session.get(Job, job_id)
-                        if j:
-                            j.current_step = n
-                            db.session.commit()
+            job_id        = job.id
+            modal_call_id = job.modal_call_id
+            pipeline_data = job.pipeline_data
 
+            print(f"  checking {job_id[:8]}...", flush=True)
+
+            def progress_cb(n, _jid=job_id):
+                with app.app_context():
+                    j = db.session.get(Job, _jid)
+                    if j:
+                        j.current_step = n
+                        db.session.commit()
+                print(f"  [step {n}]", flush=True)
+
+            try:
                 result = run_pipeline_phase2(
-                    call_id       = job.modal_call_id,
-                    pipeline_data = job.pipeline_data,
+                    call_id       = modal_call_id,
+                    pipeline_data = pipeline_data,
                     progress_cb   = progress_cb,
                 )
-
-                with app.app_context():
-                    j = db.session.get(Job, job_id)
-                    if not j:
-                        continue
-
-                    if result == "pending":
-                        # Modal still running — leave as modal_pending, check again next poll
-                        print(f"  [modal-poller] Job {job_id} still running on Modal.", flush=True)
-                        continue
-
-                    if result["success"]:
-                        j.status       = "completed"
-                        j.current_step = 6
-                        j.zip_url      = result.get("zip_url")
-                        j.message      = result.get("message")
-                        print(f"✅ [modal-poller] Job {job_id} completed.", flush=True)
-                    else:
-                        j.status  = "failed"
-                        j.message = result.get("message", "Phase 2 failed")
-                        print(f"❌ [modal-poller] Job {job_id} failed: {j.message}", flush=True)
-
-                    j.completed_at = datetime.utcnow()
-                    db.session.commit()
-
             except Exception as e:
-                print(f"❌ [modal-poller] Exception on job {job_id}: {e}", flush=True)
+                print(f"❌ [modal-poller] phase2 exception on {job_id[:8]}: {e}", flush=True)
                 traceback.print_exc()
-                with app.app_context():
-                    j = db.session.get(Job, job_id)
-                    if j:
-                        j.status       = "failed"
-                        j.message      = str(e)
-                        j.completed_at = datetime.utcnow()
-                        db.session.commit()
+                result = {"success": False, "message": str(e)}
+
+            with app.app_context():
+                j = db.session.get(Job, job_id)
+                if not j:
+                    continue
+
+                if result == "pending":
+                    print(f"  {job_id[:8]} still running on Modal.", flush=True)
+                    continue
+
+                if result.get("success"):
+                    j.status       = "completed"
+                    j.current_step = 6
+                    j.zip_url      = result.get("zip_url")
+                    j.message      = result.get("message")
+                    print(f"✅ [modal-poller] {job_id[:8]} COMPLETED.", flush=True)
+                else:
+                    j.status  = "failed"
+                    j.message = result.get("message", "Phase 2 failed")
+                    print(f"❌ [modal-poller] {job_id[:8]} FAILED: {j.message}", flush=True)
+
+                j.completed_at = datetime.utcnow()
+                db.session.commit()
