@@ -18,6 +18,8 @@ import os
 import re
 import json
 import base64
+import nbformat
+from nbconvert.preprocessors import ExecutePreprocessor
 
 
 def run_notebook(notebook_path: str, save_dir: str) -> dict:
@@ -37,29 +39,39 @@ def run_notebook(notebook_path: str, save_dir: str) -> dict:
     """
     print("→ Executing notebook...")
 
+    # Set matplotlib to non-interactive backend for production
+    env = os.environ.copy()
+    env['MPLBACKEND'] = 'Agg'
+
     try:
         result = subprocess.run(
             [
                 sys.executable, "-m", "jupyter", "nbconvert",
                 "--to", "notebook",
                 "--execute",
-                "--inplace",                           # overwrite the same file
-                "--ExecutePreprocessor.timeout=60",    # 60s max per cell
+                "--inplace",
+                "--ExecutePreprocessor.timeout=120",
                 "--ExecutePreprocessor.kernel_name=python3",
+                "--no-prompt",
                 notebook_path
             ],
             cwd=save_dir,
             capture_output=True,
             text=True,
-            timeout=120    # total pipeline timeout
+            env=env,
+            timeout=180
         )
     except subprocess.TimeoutExpired:
         print("❌ Notebook execution timed out.")
         return None
+    except FileNotFoundError:
+        print("❌ jupyter command not found. Trying alternative method...")
+        return _run_notebook_alternative(notebook_path, save_dir)
 
     if result.returncode != 0:
         print("❌ Notebook execution failed.")
         print("STDERR:", result.stderr[-2000:])
+        print("STDOUT:", result.stdout[-1000:])
         return None
 
     print("✅ Notebook executed successfully.")
@@ -147,3 +159,32 @@ def _extract_outputs(notebook_path: str, save_dir: str) -> dict:
             print(f"⚠️  Warning: {img_name} not found — may not have been generated.")
 
     return metrics
+
+
+def _run_notebook_alternative(notebook_path: str, save_dir: str) -> dict:
+    """
+    Alternative execution method using nbconvert API directly.
+    Used when jupyter command is not available in PATH.
+    """
+    print("→ Using alternative execution method...")
+    
+    try:
+        os.environ['MPLBACKEND'] = 'Agg'
+        
+        with open(notebook_path, 'r', encoding='utf-8') as f:
+            nb = nbformat.read(f, as_version=4)
+        
+        ep = ExecutePreprocessor(timeout=120, kernel_name='python3')
+        ep.preprocess(nb, {'metadata': {'path': save_dir}})
+        
+        with open(notebook_path, 'w', encoding='utf-8') as f:
+            nbformat.write(nb, f)
+        
+        print("✅ Notebook executed successfully (alternative method).")
+        return _extract_outputs(notebook_path, save_dir)
+        
+    except Exception as e:
+        print(f"❌ Alternative execution failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None

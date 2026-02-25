@@ -5,6 +5,7 @@ numpy
 nbformat
 nbconvert
 jupyter
+ipykernel
 statsmodels
 scikit-learn
 matplotlib

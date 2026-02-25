@@ -1,7 +1,42 @@
+# Environment and secrets
 *.env
+.env
+.env.local
+
+# Python
 venv/
+env/
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Temporary files
 temp/
 *.zip
-*.pyc
-*.db
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Distribution
+dist/
+build/
+*.egg-info/
