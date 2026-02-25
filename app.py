@@ -67,6 +67,61 @@ def create_app():
     @app.route("/")
     def index():
         return render_template("form.html")
+    
+    @app.route("/tokens")
+    def list_tokens():
+        """List all unused tokens (for admin use)."""
+        from pipeline.token_manager import Token
+        unused = Token.query.filter_by(used=False).all()
+        return jsonify({
+            "total": Token.query.count(),
+            "unused": len(unused),
+            "tokens": [t.token for t in unused[:100]]
+        })
+
+    @app.route("/admin")
+    def admin():
+        """Serve the admin panel (no token required)."""
+        return render_template("admin.html")
+
+    @app.route("/admin/generate", methods=["POST"])
+    def admin_generate():
+        """Admin endpoint - bypasses token validation."""
+        from pipeline import run_pipeline
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "No data received."}), 400
+
+        student_name  = data.get("student_name", "").strip()
+        matric_no     = data.get("matric_no", "").strip()
+        student_email = data.get("student_email", "").strip()
+
+        if not all([student_name, matric_no, student_email]):
+            return jsonify({"success": False, "message": "All fields are required."}), 400
+
+        if not matric_no.isdigit():
+            return jsonify({"success": False, "message": "Matric number must be numeric."}), 400
+
+        # Run pipeline directly without token
+        result = run_pipeline(
+            token="ADMIN_BYPASS",
+            matric_no=matric_no,
+            student_name=student_name,
+            student_email=student_email
+        )
+
+        if result and result.get("success"):
+            return jsonify({
+                "success": True,
+                "zip_url": result.get("zip_url"),
+                "message": "Assignment generated successfully!"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": result.get("message", "Generation failed")
+            }), 500
 
     @app.route("/submit", methods=["POST"])
     def submit():
