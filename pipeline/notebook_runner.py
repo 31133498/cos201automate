@@ -52,8 +52,12 @@ def _get_fn():
 
 
 def spawn_notebook_execution(notebook_path: str, save_dir: str, csv_path: str) -> str:
-    with open(notebook_path, "rb") as f:
-        notebook_json = f.read()
+    with open(notebook_path, "r", encoding="utf-8") as f:
+        notebook_text = f.read()
+    import json
+    json.loads(notebook_text)
+
+    notebook_json = notebook_text.encode("utf-8")
     csv_filename = os.path.basename(csv_path)
     with open(csv_path, "rb") as f:
         csv_bytes = f.read()
@@ -81,7 +85,7 @@ def collect_notebook_result(call_id: str, notebook_path: str, save_dir: str):
         print(f"❌ Notebook failed:\n{result['error'][-800:]}", flush=True)
         return None
 
-    with open(notebook_path, "wb") as f:
+    with open(notebook_path, "w", encoding="utf-8") as f:
         f.write(result["executed_nb"])
     print("✅ Executed notebook received.", flush=True)
 

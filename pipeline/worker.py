@@ -39,6 +39,7 @@ def _process_pending_job(app):
             # We rely on the 2-second poll interval being slow enough
             # that double-pickup is unlikely in production.
             # On PostgreSQL with a single worker thread this is safe.
+            print("JOB WORKER: Attempting to claim a pending job...", flush=True)
             job = (
                 Job.query
                 .filter_by(status="pending")

@@ -23,6 +23,7 @@ image = (
         "ipykernel==6.29.4",
         "pandas==2.2.2",
         "numpy==1.26.4",
+        "scipy==1.13.1",
         "statsmodels==0.14.2",
         "scikit-learn==1.5.0",
         "matplotlib==3.9.0",
@@ -73,11 +74,13 @@ def execute_notebook_remote(notebook_json: bytes, csv_bytes: bytes, csv_filename
                     "executed_nb": b"", "heatmap_png": b"",
                     "scatter_png": b"", "residual_png": b"", "stdout_text": result.stdout}
 
-        with open(nb_path, "rb") as f:
+
+        with open(nb_path, "r", encoding="utf-8") as f:
             executed_nb = f.read()
 
         nb_data = json.loads(executed_nb)
         stdout_text = ""
+        images_dict = {}
         image_names = ["heatmap.png", "scatter.png", "residual.png"]
         image_bytes = {k: b"" for k in image_names}
         image_index = 0
@@ -93,10 +96,18 @@ def execute_notebook_remote(notebook_json: bytes, csv_bytes: bytes, csv_filename
                     if isinstance(png_b64, list): png_b64 = "".join(png_b64)
                     image_bytes[image_names[image_index]] = base64.b64decode(png_b64)
                     image_index += 1
+        
+        for img_name in image_names:
+            img_path = os.path.join(tmpdir, img_name)
+            if os.path.exists(img_path):
+                with open(img_path, "rb") as f:
+                    images_dict[img_name] = f.read()
+            else:
+                images_dict[img_name] = b""
 
         print(f"Done. images={image_index} stdout={len(stdout_text)}chars", flush=True)
         return {"success": True, "executed_nb": executed_nb,
-                "heatmap_png": image_bytes["heatmap.png"],
-                "scatter_png": image_bytes["scatter.png"],
-                "residual_png": image_bytes["residual.png"],
+                "heatmap_png": images_dict["heatmap.png"],
+                "scatter_png": images_dict["scatter.png"],
+                "residual_png": images_dict["residual.png"],
                 "stdout_text": stdout_text, "error": ""}

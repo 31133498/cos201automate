@@ -272,7 +272,7 @@ def build_notebook(
     notebook_name = f"{theme_base}_regression.ipynb"
     notebook_path = os.path.join(save_dir, notebook_name)
 
-    with open(notebook_path, "w") as f:
+    with open(notebook_path, "w", encoding="utf-8") as f:
         nbf.write(nb, f)
 
     print(f"✅ Notebook built: {notebook_name} | template {int(matric_no) % 10} | AI narrative: {'yes' if narrative else 'fallback'}")
